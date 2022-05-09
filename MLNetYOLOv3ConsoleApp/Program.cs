@@ -12,8 +12,8 @@ using SkiaSharp;
 using SkiaSharp.Views.Desktop;
 using MLNetYOLOv3ConsoleApp.DataStructures;
 
-const string modelPath = @"assets\Model\yolov3-10.onnx";
-//const string modelPath = @"assets\Model\TinyYOLOv3.onnx";
+//const string modelPath = @"assets\Model\yolov3-10.onnx";
+const string modelPath = @"assets\Model\TinyYOLOv3.onnx";
 
 const string imageFolder = @"assets\images";
 
@@ -38,18 +38,18 @@ var pipeline = mlContext.Transforms.ResizeImages(inputColumnName: "bitmap", outp
                                     "input_1",
                                     "image_shape"
                     },
-                    outputColumnNames: new[]
-                    {
-                                    "yolonms_layer_1/ExpandDims_1:0",
-                                    "yolonms_layer_1/ExpandDims_3:0",
-                                    "yolonms_layer_1/concat_2:0"
-                    },
                     //outputColumnNames: new[]
                     //{
-                    //                "yolonms_layer_1",
-                    //                "yolonms_layer_1:1",
-                    //                "yolonms_layer_1:2"
+                    //                "yolonms_layer_1/ExpandDims_1:0",
+                    //                "yolonms_layer_1/ExpandDims_3:0",
+                    //                "yolonms_layer_1/concat_2:0"
                     //},
+                    outputColumnNames: new[]
+                    {
+                                    "yolonms_layer_1",
+                                    "yolonms_layer_1:1",
+                                    "yolonms_layer_1:2"
+                    },
                     modelFile: modelPath, recursionLimit: 100));
 
 // Fit on empty list to obtain input data schema
@@ -76,14 +76,22 @@ using (var bitmap = new Bitmap(Image.FromFile(Path.Combine(imageFolder, imageNam
             var y2 = result.BBox[2];
             var x2 = result.BBox[3];
 
-            g.DrawRectangle(Pens.Red, x1, y1, x2 - x1, y2 - y1);
-            using (var brushes = new SolidBrush(Color.FromArgb(50, Color.Red)))
+            g.DrawRectangle(Pens.LightGreen, x1, y1, x2 - x1, y2 - y1);
+            using (var brushes = new SolidBrush(Color.FromArgb(30, Color.LightGreen)))
             {
                 g.FillRectangle(brushes, x1, y1, x2 - x1, y2 - y1);
             }
 
-            g.DrawString(result.Label + " " + result.Confidence.ToString("0.00"),
-                         new Font("Arial", 12), Brushes.Blue, new PointF(x1, y1));
+            var fontSize = 12;
+            var text = result.Label + " " + result.Confidence.ToString("0.00");
+            var font = new Font("Arial", fontSize);
+            var textSize = g.MeasureString(text, font);
+            g.FillRectangle(Brushes.LightGreen, x1, y1 - textSize.Height, textSize.Width, textSize.Height);
+            
+            g.DrawString(text,
+                         font, Brushes.White, new PointF(x1, y1 - textSize.Height));
+
+            
         }
 
         bitmap.Save(Path.Combine(imageOutputFolder, Path.ChangeExtension(imageName, "_processed" + Path.GetExtension(imageName))));
@@ -98,15 +106,15 @@ static IReadOnlyList<YoloV3Result> GetResults(YoloV3Prediction prediction, strin
         return new List<YoloV3Result>();
     }
 
-    if (prediction.Boxes.Length != YoloV3Prediction.YoloV3BboxPredictionCount * 4)
-    {
-        throw new ArgumentException();
-    }
+    //if (prediction.Boxes.Length != YoloV3Prediction.YoloV3BboxPredictionCount * 4)
+    //{
+    //    throw new ArgumentException();
+    //}
 
-    if (prediction.Scores.Length != YoloV3Prediction.YoloV3BboxPredictionCount * categories.Length)
-    {
-        throw new ArgumentException();
-    }
+    //if (prediction.Scores.Length != YoloV3Prediction.YoloV3BboxPredictionCount * categories.Length)
+    //{
+    //    throw new ArgumentException();
+    //}
 
     List<YoloV3Result> results = new List<YoloV3Result>();
 
@@ -128,7 +136,9 @@ static IReadOnlyList<YoloV3Result> GetResults(YoloV3Prediction prediction, strin
                     prediction.Boxes[box_index * 4 + 2],
                     prediction.Boxes[box_index * 4 + 3],
         };
-        var score = prediction.Scores[box_index + class_index * YoloV3Prediction.YoloV3BboxPredictionCount];
+
+        var classScoresCount = prediction.Scores.Count() / 80;
+        var score = prediction.Scores[class_index * classScoresCount + box_index];
 
         results.Add(new YoloV3Result(bbox, label, score));
     }
