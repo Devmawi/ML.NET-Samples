@@ -4,124 +4,135 @@ using System.Drawing.Drawing2D;
 //using ObjectDetection.DataStructures;
 //using ObjectDetection;
 using Microsoft.ML;
-using MLNetConsoleApp.DataStructures;
-using MLNetConsoleApp.YoloParser;
+using Microsoft.ML.Data;
 
-string GetAbsolutePath(string relativePath)
+using static Microsoft.ML.Transforms.Image.ImageResizingEstimator;
+
+using SkiaSharp;
+using SkiaSharp.Views.Desktop;
+using MLNetYOLOv3ConsoleApp.DataStructures;
+
+const string modelPath = @"assets\Model\yolov3-10.onnx";
+//const string modelPath = @"assets\Model\TinyYOLOv3.onnx";
+
+const string imageFolder = @"assets\images";
+
+const string imageOutputFolder = @"assets\images\output";
+
+string[] classesNames = new string[] { "person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed", "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush" };
+
+
+Directory.CreateDirectory(imageOutputFolder);
+MLContext mlContext = new MLContext();
+
+// model is available here:
+// https://github.com/onnx/models/tree/master/vision/object_detection_segmentation/yolov3
+
+// Define scoring pipeline
+var pipeline = mlContext.Transforms.ResizeImages(inputColumnName: "bitmap", outputColumnName: "input_1", imageWidth: 416, imageHeight: 416, resizing: ResizingKind.IsoPad)
+    .Append(mlContext.Transforms.ExtractPixels(outputColumnName: "input_1", scaleImage: 1f / 255f))
+    .Append(mlContext.Transforms.Concatenate("image_shape", "height", "width"))
+    .Append(mlContext.Transforms.ApplyOnnxModel(shapeDictionary: new Dictionary<string, int[]>() { { "input_1", new[] { 1, 3, 416, 416 } } },
+                    inputColumnNames: new[]
+                    {
+                                    "input_1",
+                                    "image_shape"
+                    },
+                    outputColumnNames: new[]
+                    {
+                                    "yolonms_layer_1/ExpandDims_1:0",
+                                    "yolonms_layer_1/ExpandDims_3:0",
+                                    "yolonms_layer_1/concat_2:0"
+                    },
+                    //outputColumnNames: new[]
+                    //{
+                    //                "yolonms_layer_1",
+                    //                "yolonms_layer_1:1",
+                    //                "yolonms_layer_1:2"
+                    //},
+                    modelFile: modelPath, recursionLimit: 100));
+
+// Fit on empty list to obtain input data schema
+var model = pipeline.Fit(mlContext.Data.LoadFromEnumerable(new List<YoloV3BitmapData>()));
+
+// Create prediction engine
+var predictionEngine = mlContext.Model.CreatePredictionEngine<YoloV3BitmapData, YoloV3Prediction>(model);
+
+// load image
+string imageName = "image1.jpg";
+using (var bitmap = new Bitmap(Image.FromFile(Path.Combine(imageFolder, imageName))))
 {
-    FileInfo _dataRoot = new FileInfo(typeof(Program).Assembly.Location);
-    string assemblyFolderPath = _dataRoot.Directory.FullName;
+    // predict
+    var predict = predictionEngine.Predict(new YoloV3BitmapData() { Image = bitmap });
+    var results = GetResults(predict, classesNames);
 
-    string fullPath = Path.Combine(assemblyFolderPath, relativePath);
-
-    return fullPath;
-}
-
-void DrawBoundingBox(string inputImageLocation, string outputImageLocation, string imageName, IList<YoloBoundingBox> filteredBoundingBoxes)
-{
-    Image image = Image.FromFile(Path.Combine(inputImageLocation, imageName));
-
-    var originalImageHeight = image.Height;
-    var originalImageWidth = image.Width;
-
-    foreach (var box in filteredBoundingBoxes)
+    // draw predictions
+    using (var g = Graphics.FromImage(bitmap))
     {
-        var x = (uint)Math.Max(box.Dimensions.X, 0);
-        var y = (uint)Math.Max(box.Dimensions.Y, 0);
-        var width = (uint)Math.Min(originalImageWidth - x, box.Dimensions.Width);
-        var height = (uint)Math.Min(originalImageHeight - y, box.Dimensions.Height);
-
-        x = (uint)originalImageWidth * x / OnnxModelScorer.ImageNetSettings.imageWidth;
-        y = (uint)originalImageHeight * y / OnnxModelScorer.ImageNetSettings.imageHeight;
-        width = (uint)originalImageWidth * width / OnnxModelScorer.ImageNetSettings.imageWidth;
-        height = (uint)originalImageHeight * height / OnnxModelScorer.ImageNetSettings.imageHeight;
-        string text = $"{box.Label} ({(box.Confidence * 100).ToString("0")}%)";
-        using (Graphics thumbnailGraphic = Graphics.FromImage(image))
+        foreach (var result in results)
         {
-            thumbnailGraphic.CompositingQuality = CompositingQuality.HighQuality;
-            thumbnailGraphic.SmoothingMode = SmoothingMode.HighQuality;
-            thumbnailGraphic.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            var y1 = result.BBox[0];
+            var x1 = result.BBox[1];
+            var y2 = result.BBox[2];
+            var x2 = result.BBox[3];
 
-            // Define Text Options
-            Font drawFont = new Font("Arial", 12, FontStyle.Bold);
-            SizeF size = thumbnailGraphic.MeasureString(text, drawFont);
-            SolidBrush fontBrush = new SolidBrush(Color.Black);
-            Point atPoint = new Point((int)x, (int)y - (int)size.Height - 1);
-
-            // Define BoundingBox options
-            Pen pen = new Pen(box.BoxColor, 3.2f);
-            SolidBrush colorBrush = new SolidBrush(box.BoxColor);
-
-            thumbnailGraphic.FillRectangle(colorBrush, (int)x, (int)(y - size.Height - 1), (int)size.Width, (int)size.Height);
-
-            thumbnailGraphic.DrawString(text, drawFont, fontBrush, atPoint);
-
-            // Draw bounding box on image
-            thumbnailGraphic.DrawRectangle(pen, x, y, width, height);
-
-            if (!Directory.Exists(outputImageLocation))
+            g.DrawRectangle(Pens.Red, x1, y1, x2 - x1, y2 - y1);
+            using (var brushes = new SolidBrush(Color.FromArgb(50, Color.Red)))
             {
-                Directory.CreateDirectory(outputImageLocation);
+                g.FillRectangle(brushes, x1, y1, x2 - x1, y2 - y1);
             }
 
-            image.Save(Path.Combine(outputImageLocation, imageName));
+            g.DrawString(result.Label + " " + result.Confidence.ToString("0.00"),
+                         new Font("Arial", 12), Brushes.Blue, new PointF(x1, y1));
         }
+
+        bitmap.Save(Path.Combine(imageOutputFolder, Path.ChangeExtension(imageName, "_processed" + Path.GetExtension(imageName))));
     }
 }
 
-void LogDetectedObjects(string imageName, IList<YoloBoundingBox> boundingBoxes)
-{
-    Console.WriteLine($".....The objects in the image {imageName} are detected as below....");
 
-    foreach (var box in boundingBoxes)
+static IReadOnlyList<YoloV3Result> GetResults(YoloV3Prediction prediction, string[] categories)
+{
+    if (prediction.Concat == null || prediction.Concat.Length == 0)
     {
-        Console.WriteLine($"{box.Label} and its Confidence score: {box.Confidence}");
+        return new List<YoloV3Result>();
     }
 
-    Console.WriteLine("");
-}
-
-// See https://aka.ms/new-console-template for more information
-Console.WriteLine("Hello, World!");
-
-var assetsRelativePath = @"../../../assets";
-string assetsPath = GetAbsolutePath(assetsRelativePath);
-var modelFilePath = Path.Combine(assetsPath, "Model", "TinyYOLOv3.onnx");
-var imagesFolder = Path.Combine(assetsPath, "images");
-var outputFolder = Path.Combine(assetsPath, "images", "output");
-
-MLContext mlContext = new MLContext();
-try
-{
-    IEnumerable<ImageNetData> images = ImageNetData.ReadFromFile(imagesFolder);
-    IDataView imageDataView = mlContext.Data.LoadFromEnumerable(images);
-
-    // Create instance of model scorer
-    var modelScorer = new OnnxModelScorer(imagesFolder, modelFilePath, mlContext);
-
-    // Use model to score data
-    IEnumerable<float[]> probabilities = modelScorer.Score(imageDataView);
-
-    YoloOutputParser parser = new YoloOutputParser();
-
-    var boundingBoxes =
-        probabilities
-        .Select(probability => parser.ParseOutputs(probability))
-         .Select(boxes => parser.FilterBoundingBoxes(boxes, 20, .5F));
-
-    for (var i = 0; i < images.Count(); i++)
+    if (prediction.Boxes.Length != YoloV3Prediction.YoloV3BboxPredictionCount * 4)
     {
-        string imageFileName = images.ElementAt(i).Label;
-        IList<YoloBoundingBox> detectedObjects = boundingBoxes.ElementAt(i);
-
-        DrawBoundingBox(imagesFolder, outputFolder, imageFileName, detectedObjects);
-        LogDetectedObjects(imageFileName, detectedObjects);
-        Console.WriteLine("========= End of Process..Hit any Key ========");
+        throw new ArgumentException();
     }
 
-}
-catch (Exception ex)
-{
-    Console.WriteLine(ex.ToString());
+    if (prediction.Scores.Length != YoloV3Prediction.YoloV3BboxPredictionCount * categories.Length)
+    {
+        throw new ArgumentException();
+    }
+
+    List<YoloV3Result> results = new List<YoloV3Result>();
+
+    // Concat size is 'nbox'x3 (batch_index, class_index, box_index)
+    int resulstCount = prediction.Concat.Length / 3;
+    for (int c = 0; c < resulstCount; c++)
+    {
+        var res = prediction.Concat.Skip(c * 3).Take(3).ToArray();
+
+        var batch_index = res[0];
+        var class_index = res[1];
+        var box_index = res[2];
+
+        var label = categories[class_index];
+        var bbox = new float[]
+        {
+                    prediction.Boxes[box_index * 4],
+                    prediction.Boxes[box_index * 4 + 1],
+                    prediction.Boxes[box_index * 4 + 2],
+                    prediction.Boxes[box_index * 4 + 3],
+        };
+        var score = prediction.Scores[box_index + class_index * YoloV3Prediction.YoloV3BboxPredictionCount];
+
+        results.Add(new YoloV3Result(bbox, label, score));
+    }
+
+    return results;
 }
 

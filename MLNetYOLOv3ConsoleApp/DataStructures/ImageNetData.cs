@@ -15,6 +15,10 @@ namespace MLNetConsoleApp.DataStructures
         [LoadColumn(1)]
         public string Label;
 
+        [ColumnName("image_shape")]
+        [VectorType(2)]
+        public float[] ImageShape = new float[] { 416, 416 };
+
         public static IEnumerable<ImageNetData> ReadFromFile(string imageFolder)
         {
             return Directory
