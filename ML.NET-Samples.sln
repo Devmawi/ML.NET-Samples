@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.2.32414.248
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MLNetConsoleApp", "MLNetConsoleApp\MLNetConsoleApp.csproj", "{AAE1DC3E-4CEB-45DC-8725-8D3DA682D527}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TinyYOLOv2", "TinyYOLOv2\TinyYOLOv2.csproj", "{AAE1DC3E-4CEB-45DC-8725-8D3DA682D527}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MLNetYOLOv3ConsoleApp", "MLNetYOLOv3ConsoleApp\MLNetYOLOv3ConsoleApp.csproj", "{5989C66D-8EED-4041-B3E3-285362811095}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TinyYOLOv3", "TinyYOLOv3\TinyYOLOv3.csproj", "{5989C66D-8EED-4041-B3E3-285362811095}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
